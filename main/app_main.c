@@ -1,7 +1,7 @@
 #include <string.h>
+#include <stdio.h>
 
 #include "esp_check.h"
-#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "breath_led.h"
@@ -15,10 +15,24 @@
 #define FRAME_DELAY_MS 60
 #define HISTORY_WINDOW_MS ((FRAME_SAMPLE_COUNT * FRAME_DELAY_MS) / HISTORY_ADVANCE_PIXELS)
 
-static const char *TAG = "osc_app";
 static uint16_t s_capture[CAPTURE_SAMPLE_COUNT];
 static uint16_t s_history[FRAME_SAMPLE_COUNT];
 static uint16_t s_points[FRAME_SAMPLE_COUNT];
+
+static void print_vofa_voltage(uint16_t millivolts)
+{
+    printf("%u.%03u", millivolts / 1000U, millivolts % 1000U);
+}
+
+static void print_vofa_frame(uint16_t envelope_mv, const osc_metrics_t *metrics)
+{
+    print_vofa_voltage(envelope_mv);
+    putchar(',');
+    print_vofa_voltage(metrics->max_mv);
+    putchar(',');
+    print_vofa_voltage(metrics->avg_mv);
+    putchar('\n');
+}
 
 void app_main(void)
 {
@@ -27,8 +41,6 @@ void app_main(void)
     ESP_ERROR_CHECK(osc_adc_init());
 
     osc_metrics_t metrics = {0};
-
-    ESP_LOGI(TAG, "ESP32 oscilloscope started");
 
     while (true) {
         size_t count = osc_adc_read(s_capture, CAPTURE_SAMPLE_COUNT);
@@ -57,6 +69,7 @@ void app_main(void)
         osc_core_make_auto_points(s_history, FRAME_SAMPLE_COUNT, s_points, FRAME_SAMPLE_COUNT);
         osc_core_analyze(s_history, FRAME_SAMPLE_COUNT, OSC_ADC_SAMPLE_RATE_HZ, &metrics);
         ili9341_display_draw(s_points, FRAME_SAMPLE_COUNT, &metrics, OSC_ADC_SAMPLE_RATE_HZ, HISTORY_WINDOW_MS);
+        print_vofa_frame(osc_core_raw_to_mv(filtered_raw), &metrics);
         breath_led_update((uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS));
         vTaskDelay(pdMS_TO_TICKS(FRAME_DELAY_MS));
     }
